@@ -2,11 +2,27 @@ import nodemailer from 'nodemailer';
 import { SenderAccount } from '@prisma/client';
 import { logger } from '../utils/logger.js';
 
-export const createTransporter = (account: SenderAccount) => {
+export const createTransporter = async (account: SenderAccount) => {
   if (account.provider === 'ETHEREAL') {
-    // Fallback values if user passes placeholders, pulling from backend environment variables
-    const user = account.smtpUser.includes('placeholder') ? process.env.ETHEREAL_USER : account.smtpUser;
-    const pass = account.smtpPass.includes('placeholder') ? process.env.ETHEREAL_PASS : account.smtpPass;
+    let user = account.smtpUser;
+    let pass = account.smtpPass;
+
+    // Check if we need to resolve placeholders using test account creator
+    if (user.includes('placeholder') || pass.includes('placeholder')) {
+      if (process.env.ETHEREAL_USER && process.env.ETHEREAL_PASS && !process.env.ETHEREAL_USER.includes('placeholder')) {
+        user = process.env.ETHEREAL_USER;
+        pass = process.env.ETHEREAL_PASS;
+      } else {
+        logger.info('Generating dynamic Ethereal SMTP test account on-the-fly...');
+        const testAccount = await nodemailer.createTestAccount();
+        user = testAccount.user;
+        pass = testAccount.pass;
+        // Save to environment variables so subsequent sends in this session reuse it
+        process.env.ETHEREAL_USER = user;
+        process.env.ETHEREAL_PASS = pass;
+        logger.info(`Generated Ethereal Credentials: User = ${user}, Pass = ${pass}`);
+      }
+    }
 
     return nodemailer.createTransport({
       host: 'smtp.ethereal.email',
@@ -33,7 +49,7 @@ export const createTransporter = (account: SenderAccount) => {
 
 export const testConnection = async (account: SenderAccount): Promise<boolean> => {
   try {
-    const transporter = createTransporter(account);
+    const transporter = await createTransporter(account);
     await transporter.verify();
     return true;
   } catch (error) {

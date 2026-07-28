@@ -255,7 +255,7 @@ export const sendScheduledEmail = async (emailId: string, token?: string, job?: 
     const compiledBody = compileTemplate(campaign.body, variables);
 
     // 7. Create Nodemailer SMTP Transporter dynamically using sender credentials
-    const transporter = createTransporter(senderAccount);
+    const transporter = await createTransporter(senderAccount);
 
     const senderDisplay = senderAccount.name ? `"${senderAccount.name}" <${senderAccount.email}>` : senderAccount.email;
 
