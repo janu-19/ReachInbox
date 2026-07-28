@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api.js';
 import { useNavigate } from 'react-router-dom';
-import { Send, AlertTriangle, CheckCircle, FileSpreadsheet, Keyboard, Sparkles } from 'lucide-react';
+import { AlertTriangle, CheckCircle, FileSpreadsheet, Keyboard, Sparkles, Eye, Clock } from 'lucide-react';
+import { PreviewModal, PreviewData } from '../components/PreviewModal.js';
 
 interface SenderAccount {
   id: string;
@@ -105,6 +106,11 @@ export const Compose: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  
+  // Preview States
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   useEffect(() => {
     fetchSenders();
@@ -165,7 +171,7 @@ export const Compose: React.FC = () => {
     }
   };
 
-  const handleScheduleCampaign = async (e: React.FormEvent) => {
+  const handleOpenPreview = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
@@ -180,6 +186,40 @@ export const Compose: React.FC = () => {
       return;
     }
 
+    setLoadingPreview(true);
+    try {
+      const payload = {
+        name,
+        subject,
+        body,
+        senderAccountId,
+        startTime: new Date(startTime).toISOString(),
+        delaySeconds: Number(delaySeconds),
+        hourlyLimit: Number(hourlyLimit),
+        recipients: parsedRecipients,
+      };
+
+      const response = await api.post('/campaigns/preview', payload);
+      setPreviewData(response.data);
+      setIsPreviewOpen(true);
+    } catch (err: any) {
+      if (err.response?.data?.details) {
+        console.error('API Validation Details:', err.response.data.details);
+        const validationMsgs = err.response.data.details
+          .map((d: any) => `${d.field}: ${d.message}`)
+          .join(', ');
+        setError(`Validation Error - ${validationMsgs}`);
+      } else {
+        setError(err.response?.data?.message || 'Failed to generate campaign preview.');
+      }
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const handleConfirmSchedule = async () => {
+    setError(null);
+    setSuccess(null);
     setSubmitting(true);
     try {
       const payload = {
@@ -195,6 +235,7 @@ export const Compose: React.FC = () => {
 
       await api.post('/schedule', payload);
       setSuccess('Campaign scheduled and queue jobs generated successfully!');
+      setIsPreviewOpen(false);
       
       setTimeout(() => {
         navigate('/');
@@ -259,7 +300,7 @@ export const Compose: React.FC = () => {
           </button>
         </div>
       ) : (
-        <form onSubmit={handleScheduleCampaign} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <form onSubmit={handleOpenPreview} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Compose Inputs */}
           <div className="lg:col-span-2 space-y-6">
             <div className="glass-panel p-6 rounded-2xl border border-slate-900/60 space-y-4 shadow-sm">
@@ -470,16 +511,45 @@ export const Compose: React.FC = () => {
               <div className="pt-4 border-t border-slate-900/60">
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={loadingPreview}
                   className="w-full flex items-center justify-center space-x-2 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 text-white rounded-xl text-sm font-semibold transition-all duration-200 shadow-md shadow-indigo-600/10"
                 >
-                  <Send size={16} />
-                  <span>{submitting ? 'Generating Queue Jobs...' : 'Schedule Campaign'}</span>
+                  {loadingPreview ? (
+                    <>
+                      <Clock className="animate-spin" size={16} />
+                      <span>Generating Preview...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Eye size={16} />
+                      <span>Preview Campaign</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
           </div>
         </form>
+      )}
+
+      {previewData && (
+        <PreviewModal
+          isOpen={isPreviewOpen}
+          onClose={() => setIsPreviewOpen(false)}
+          onConfirm={handleConfirmSchedule}
+          campaignSummary={{
+            name,
+            senderName: senders.find((s) => s.id === senderAccountId)?.name || '',
+            senderEmail: senders.find((s) => s.id === senderAccountId)?.email || '',
+            subject,
+            recipientCount: parsedRecipients.length,
+            startTime,
+            delaySeconds,
+            hourlyLimit,
+          }}
+          previewData={previewData}
+          submitting={submitting}
+        />
       )}
     </div>
   );

@@ -246,7 +246,7 @@ export const sendScheduledEmail = async (emailId: string, token?: string, job?: 
     const compileTemplate = (template: string, vars: Record<string, string>): string => {
       let compiled = template;
       for (const [key, value] of Object.entries(vars)) {
-        compiled = compiled.replace(new RegExp(`{{\\s*${key}\\s*}}`, 'gi'), value);
+        compiled = compiled.replace(new RegExp(`\\{\\{?\\s*${key}\\s*\\}?\\}`, 'gi'), value);
       }
       return compiled;
     };
@@ -302,4 +302,237 @@ export const sendScheduledEmail = async (emailId: string, token?: string, job?: 
     // 11. Re-throw the error to let BullMQ trigger retry strategy configurations
     throw error;
   }
+};
+
+export const compileTemplate = (template: string, variables: Record<string, string>) => {
+  let compiled = template;
+  for (const [key, value] of Object.entries(variables)) {
+    const regex = new RegExp(`\\{\\{?\\s*${key}\\s*\\}?\\}`, 'gi');
+    compiled = compiled.replace(regex, value);
+  }
+  return compiled;
+};
+
+export interface GeneratePreviewInput {
+  name: string;
+  subject: string;
+  body: string;
+  senderAccountId: string;
+  startTime: Date;
+  delaySeconds: number;
+  hourlyLimit: number;
+  recipients: Array<{
+    email?: string;
+    variables?: Record<string, string>;
+  }>;
+}
+
+export const generateCampaignPreview = async (input: GeneratePreviewInput) => {
+  const { subject, body, startTime, delaySeconds, hourlyLimit, recipients } = input;
+
+  const stats = {
+    total: recipients.length,
+    valid: 0,
+    invalid: 0,
+    duplicates: 0,
+  };
+
+  const validationWarnings: Array<{
+    row: number;
+    email: string;
+    type: string;
+    message: string;
+  }> = [];
+
+  const seenEmails = new Set<string>();
+
+  // 1. Extract merge tags inside subject and body templates
+  const extractMergeTags = (text: string): string[] => {
+    const regex = /\{\{?\s*(\w+)\s*\}?\}/g;
+    const tags: string[] = [];
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      if (!tags.includes(match[1])) {
+        tags.push(match[1]);
+      }
+    }
+    return tags;
+  };
+
+  const templateTags = Array.from(new Set([
+    ...extractMergeTags(subject),
+    ...extractMergeTags(body),
+  ]));
+
+  // 2. Validate CSV / recipients array
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  for (let i = 0; i < recipients.length; i++) {
+    const rec = recipients[i];
+    const rawEmail = rec.email;
+    const email = rawEmail ? rawEmail.trim() : '';
+    const recVariables = rec.variables || {};
+
+    let isInvalidEmail = false;
+
+    // Check missing email
+    if (email === '') {
+      validationWarnings.push({
+        row: i + 1,
+        email: '',
+        type: 'MISSING_EMAIL',
+        message: 'Row has an empty email address field.',
+      });
+      stats.invalid++;
+      isInvalidEmail = true;
+    }
+    // Check format
+    else if (!emailRegex.test(email)) {
+      validationWarnings.push({
+        row: i + 1,
+        email,
+        type: 'INVALID_FORMAT',
+        message: 'Email address has an invalid format.',
+      });
+      stats.invalid++;
+      isInvalidEmail = true;
+    }
+    // Check duplicate
+    else {
+      const normalized = email.toLowerCase();
+      if (seenEmails.has(normalized)) {
+        validationWarnings.push({
+          row: i + 1,
+          email,
+          type: 'DUPLICATE',
+          message: 'Recipient email address is duplicated in the list.',
+        });
+        stats.duplicates++;
+      } else {
+        seenEmails.add(normalized);
+        stats.valid++;
+      }
+    }
+
+    // Check missing merge fields (only warn if email is valid so we don't spam errors)
+    if (!isInvalidEmail) {
+      const missingTagsForRec = templateTags.filter(
+        (tag) =>
+          !Object.hasOwn(recVariables, tag) ||
+          recVariables[tag] === undefined ||
+          recVariables[tag].trim() === ''
+      );
+
+      if (missingTagsForRec.length > 0) {
+        validationWarnings.push({
+          row: i + 1,
+          email,
+          type: 'MISSING_MERGE_FIELD',
+          message: `Missing values for tags: ${missingTagsForRec.map((t) => `'${t}'`).join(', ')}`,
+        });
+      }
+    }
+  }
+
+  // 3. Perform non-blocking spam checks
+  const spamWarnings: Array<{ type: string; message: string }> = [];
+  if (!subject || subject.trim() === '') {
+    spamWarnings.push({ type: 'EMPTY_SUBJECT', message: 'Subject line is empty.' });
+  }
+  if (!body || body.trim() === '') {
+    spamWarnings.push({ type: 'EMPTY_BODY', message: 'Email body is empty.' });
+  }
+
+  const countExclamations = (text: string) => (text.match(/!/g) || []).length;
+  if (countExclamations(subject) > 1) {
+    spamWarnings.push({
+      type: 'EXCESSIVE_EXCLAMATIONS',
+      message: 'Subject line contains too many exclamation marks (!).',
+    });
+  }
+  if (countExclamations(body) > 3) {
+    spamWarnings.push({
+      type: 'EXCESSIVE_EXCLAMATIONS',
+      message: 'Body template contains too many exclamation marks (!).',
+    });
+  }
+
+  const isExcessiveCaps = (text: string) => {
+    const letters = text.replace(/[^a-zA-Z]/g, '');
+    if (letters.length < 10) return false;
+    const capitals = letters.replace(/[^A-Z]/g, '');
+    return capitals.length / letters.length > 0.3;
+  };
+  if (isExcessiveCaps(subject)) {
+    spamWarnings.push({
+      type: 'HIGH_CAPITALIZATION',
+      message: 'Subject line contains too many CAPITAL letters.',
+    });
+  }
+  if (isExcessiveCaps(body)) {
+    spamWarnings.push({
+      type: 'HIGH_CAPITALIZATION',
+      message: 'Email body contains too many CAPITAL letters.',
+    });
+  }
+
+  const spamKeywords = [
+    'free', 'guarantee', 'winner', 'act now', 'earn money', 'risk free',
+    'cash', 'limited time', 'urgency', 'make money', 'buy now', 'promotion'
+  ];
+  const lowerSubject = subject.toLowerCase();
+  const lowerBody = body.toLowerCase();
+  const matchedKeywords = spamKeywords.filter(
+    (kw) => lowerSubject.includes(kw) || lowerBody.includes(kw)
+  );
+  if (matchedKeywords.length > 0) {
+    spamWarnings.push({
+      type: 'SPAM_KEYWORDS',
+      message: `Content contains common spam trigger phrases: ${matchedKeywords.map((kw) => `'${kw}'`).join(', ')}`,
+    });
+  }
+
+  // 4. Generate previews and calculate timeline
+  const previews: Array<{ email: string; subject: string; body: string; scheduledTime: string }> = [];
+  const startMs = startTime.getTime();
+  let lastRecipientTime = startMs;
+
+  for (let i = 0; i < recipients.length; i++) {
+    const rec = recipients[i];
+    const rawEmail = rec.email;
+    const recEmail = rawEmail ? rawEmail.trim() : '';
+    const recVariables = rec.variables || {};
+
+    const compiledSubject = compileTemplate(subject, recVariables);
+    const compiledBody = compileTemplate(body.replace(/\n/g, '<br/>'), recVariables);
+
+    // Calculate this recipient's sending timestamp
+    const hourIndex = Math.floor(i / hourlyLimit);
+    const indexInHour = i % hourlyLimit;
+    const recipientTime = startMs + hourIndex * 3600 * 1000 + indexInHour * delaySeconds * 1000;
+    if (recipientTime > lastRecipientTime) {
+      lastRecipientTime = recipientTime;
+    }
+
+    // Limit preview entries to first 200 for payload safety, while calculating timelines for all
+    if (i < 200) {
+      previews.push({
+        email: recEmail,
+        subject: compiledSubject,
+        body: compiledBody,
+        scheduledTime: new Date(recipientTime).toISOString(),
+      });
+    }
+  }
+
+  const estimatedDurationSeconds = Math.round((lastRecipientTime - startMs) / 1000);
+  const estimatedFinishTime = new Date(lastRecipientTime).toISOString();
+
+  return {
+    previews,
+    statistics: stats,
+    validationWarnings,
+    spamWarnings,
+    estimatedDurationSeconds,
+    estimatedFinishTime,
+  };
 };

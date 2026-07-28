@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/db.js';
-import { scheduleCampaign } from '../services/email.service.js';
+import { scheduleCampaign, generateCampaignPreview } from '../services/email.service.js';
 import { EmailStatus } from '@prisma/client';
 
 export const scheduleCampaignSchema = z.object({
@@ -155,6 +155,45 @@ export const getEmailById = async (req: Request, res: Response, next: NextFuncti
     }
 
     return res.json(email);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const previewCampaignSchema = z.object({
+  body: z.object({
+    name: z.string().min(1, 'Campaign name is required'),
+    subject: z.string().min(1, 'Subject is required'),
+    body: z.string().min(1, 'Body template is required'),
+    senderAccountId: z.string().uuid('Invalid sender account ID'),
+    startTime: z.string().datetime({ message: 'Invalid ISO start time string' }).transform((val) => new Date(val)),
+    delaySeconds: z.number().int().positive().default(2),
+    hourlyLimit: z.number().int().positive().default(100),
+    recipients: z.array(
+      z.object({
+        email: z.string().optional().or(z.literal('')),
+        variables: z.record(z.string()).optional(),
+      })
+    ).nonempty('Recipients list cannot be empty'),
+  }),
+});
+
+export const previewCampaign = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { name, subject, body, senderAccountId, startTime, delaySeconds, hourlyLimit, recipients } = req.body;
+
+    const result = await generateCampaignPreview({
+      name,
+      subject,
+      body,
+      senderAccountId,
+      startTime: new Date(startTime),
+      delaySeconds,
+      hourlyLimit,
+      recipients,
+    });
+
+    return res.json(result);
   } catch (error) {
     return next(error);
   }
