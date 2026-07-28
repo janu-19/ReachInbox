@@ -36,8 +36,10 @@ export const addSender = async (req: Request, res: Response, next: NextFunction)
       updatedAt: new Date(),
     };
 
-    // Run connection test before database insertion
-    const isConnected = await testConnection(tempAccount);
+    // Run connection test before database insertion (can be bypassed via env variable if ports are blocked by host)
+    const bypassVerification = process.env.BYPASS_SMTP_VERIFICATION === 'true';
+    const isConnected = bypassVerification ? true : await testConnection(tempAccount);
+    
     if (!isConnected) {
       return res.status(400).json({
         error: 'SMTPConnectionError',
