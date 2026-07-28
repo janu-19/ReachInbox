@@ -16,9 +16,9 @@ const router = Router();
 router.use(requireAuth);
 
 router.post('/schedule', validate(scheduleCampaignSchema), scheduleEmails);
-router.get('/', getEmails);
+router.get('/emails', getEmails);
 router.get('/scheduled', getScheduledEmails);
 router.get('/sent', getSentEmails);
-router.get('/:id', getEmailById);
+router.get('/emails/:id', getEmailById);
 
 export default router;

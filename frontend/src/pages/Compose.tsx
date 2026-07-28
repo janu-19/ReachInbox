@@ -193,7 +193,7 @@ export const Compose: React.FC = () => {
         recipients: parsedRecipients,
       };
 
-      await api.post('/emails/schedule', payload);
+      await api.post('/schedule', payload);
       setSuccess('Campaign scheduled and queue jobs generated successfully!');
       
       setTimeout(() => {

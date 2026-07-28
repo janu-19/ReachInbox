@@ -7,6 +7,6 @@ const router = Router();
 
 router.use('/auth', authRouter);
 router.use('/senders', senderRouter);
-router.use('/emails', emailRouter);
+router.use('/', emailRouter);
 
 export default router;
