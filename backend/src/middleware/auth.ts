@@ -1,22 +1,29 @@
 import { Request, Response, NextFunction } from 'express';
-import { prisma } from '../config/db.js';
+import jwt from 'jsonwebtoken';
+import { UserPayload } from '../types/express.js';
 
-export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    // Automatically find or create a default developer user to satisfy campaign relations in MySQL
-    const defaultUser = await prisma.user.upsert({
-      where: { email: 'developer@example.com' },
-      update: {},
-      create: {
-        email: 'developer@example.com',
-        name: 'Developer Account',
-        picture: 'https://lh3.googleusercontent.com/a/default-user',
-      },
+const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_change_me_in_production';
+
+export const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      error: 'UnauthorizedError',
+      message: 'Access denied. No token provided.',
     });
+  }
 
-    req.user = { id: defaultUser.id, email: defaultUser.email };
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as UserPayload;
+    req.user = decoded;
     return next();
   } catch (error) {
-    return next(error);
+    return res.status(401).json({
+      error: 'UnauthorizedError',
+      message: 'Invalid or expired session token.',
+    });
   }
 };
