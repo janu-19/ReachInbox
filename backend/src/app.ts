@@ -5,6 +5,10 @@ import apiRouter from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './utils/logger.js';
 
+// Initialize background queue worker and events monitoring
+import './workers/email.worker.js';
+import './queue/email.events.js';
+
 dotenv.config();
 
 const app = express();
