@@ -9,6 +9,8 @@ import { Dashboard } from './pages/Dashboard.js';
 import { Senders } from './pages/Senders.js';
 import { Compose } from './pages/Compose.js';
 import { Emails } from './pages/Emails.js';
+import { ScheduledEmails } from './pages/ScheduledEmails.js';
+import { SentEmails } from './pages/SentEmails.js';
 import './index.css';
 
 // Guard component that redirects to login if the user is not authenticated
@@ -92,6 +94,22 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               element={
                 <ProtectedRoute>
                   <Emails />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/scheduled"
+              element={
+                <ProtectedRoute>
+                  <ScheduledEmails />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/sent"
+              element={
+                <ProtectedRoute>
+                  <SentEmails />
                 </ProtectedRoute>
               }
             />

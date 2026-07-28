@@ -8,6 +8,8 @@ import {
   UserCheck,
   LogOut,
   Sparkles,
+  Clock,
+  CheckCircle,
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -23,7 +25,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     { to: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
     { to: '/senders', label: 'Senders', icon: <UserCheck size={20} /> },
     { to: '/compose', label: 'Compose', icon: <Send size={20} /> },
-    { to: '/emails', label: 'Emails', icon: <Mail size={20} /> },
+    { to: '/scheduled', label: 'Scheduled Queue', icon: <Clock size={20} /> },
+    { to: '/sent', label: 'Sent History', icon: <CheckCircle size={20} /> },
+    { to: '/emails', label: 'Audit Logs', icon: <Mail size={20} /> },
   ];
 
   return (
