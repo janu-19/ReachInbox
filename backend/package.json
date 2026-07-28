@@ -9,7 +9,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:push": "prisma db push"
+    "prisma:push": "prisma db push",
+    "test": "npm run build && node dist/tests/run-tests.js"
   },
   "dependencies": {
     "@prisma/client": "^5.12.1",
