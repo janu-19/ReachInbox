@@ -8,13 +8,68 @@ generator client {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  name      String?
-  picture   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  emails    Email[]
+  id             String          @id @default(uuid())
+  email          String          @unique
+  name           String?
+  picture        String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  senderAccounts SenderAccount[]
+  campaigns      Campaign[]
+}
+
+enum ProviderType {
+  ETHEREAL
+  GMAIL
+  OUTLOOK
+  CUSTOM_SMTP
+}
+
+model SenderAccount {
+  id           String       @id @default(uuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email        String       @unique
+  name         String?      // Display name as sender
+  provider     ProviderType @default(ETHEREAL)
+  smtpHost     String
+  smtpPort     Int
+  smtpUser     String
+  smtpPass     String       // Encrypted in production
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  campaigns    Campaign[]
+
+  @@index([userId])
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+model Campaign {
+  id              String           @id @default(uuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  senderAccountId String
+  senderAccount   SenderAccount    @relation(fields: [senderAccountId], references: [id])
+  name            String
+  subject         String           @db.VarChar(255)
+  body            String           @db.Text
+  startTime       DateTime
+  delaySeconds    Int              @default(2)
+  hourlyLimit     Int              @default(100)
+  status          CampaignStatus   @default(DRAFT)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  scheduledEmails ScheduledEmail[]
+
+  @@index([userId])
+  @@index([senderAccountId])
+  @@index([status])
 }
 
 enum EmailStatus {
@@ -24,23 +79,25 @@ enum EmailStatus {
   FAILED
 }
 
-model Email {
-  id            String      @id @default(uuid())
-  userId        String
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  senderEmail   String
-  recipient     String
-  subject       String
-  body          String      @db.Text
-  scheduledTime DateTime
-  sentTime      DateTime?
-  status        EmailStatus @default(SCHEDULED)
-  error         String?     @db.Text
-  jobId         String?     @unique // BullMQ Job ID mapping for potential cancel/reschedule
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+model ScheduledEmail {
+  id             String      @id @default(uuid())
+  campaignId     String
+  campaign       Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipient      String
+  variables      Json?       // Stores dynamic template variables for this recipient (e.g. { name: "Alice" })
+  scheduledTime  DateTime
+  sentTime       DateTime?
+  status         EmailStatus @default(SCHEDULED)
+  error          String?     @db.Text
+  jobId          String?     @unique // Reference to the BullMQ Job ID
+  idempotencyKey String      @unique // Generated key: `campaignId:recipient`
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
-  @@index([userId])
+  // Indexes for high performance querying
+  @@index([campaignId])
   @@index([status])
   @@index([scheduledTime])
+  // Composite index for reporting metrics
+  @@index([campaignId, status])
 }
