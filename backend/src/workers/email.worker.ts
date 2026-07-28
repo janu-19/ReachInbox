@@ -6,12 +6,12 @@ import { EMAIL_QUEUE_NAME } from '../queue/email.queue.js';
 
 export const emailWorker = new Worker(
   EMAIL_QUEUE_NAME,
-  async (job: Job<{ emailId: string }>) => {
+  async (job: Job<{ emailId: string }>, token?: string) => {
     const { emailId } = job.data;
     logger.info(`Worker processing job ${job.id} for email ID ${emailId}`);
     
-    // Call refactored central email dispatch service method
-    await sendScheduledEmail(emailId);
+    // Call refactored central email dispatch service method with token and job parameters
+    await sendScheduledEmail(emailId, token, job);
   },
   {
     connection: redisConfig,
