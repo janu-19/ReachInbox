@@ -201,7 +201,15 @@ export const Compose: React.FC = () => {
       }, 1500);
 
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to schedule campaign.');
+      if (err.response?.data?.details) {
+        console.error('API Validation Details:', err.response.data.details);
+        const validationMsgs = err.response.data.details
+          .map((d: any) => `${d.field}: ${d.message}`)
+          .join(', ');
+        setError(`Validation Error - ${validationMsgs}`);
+      } else {
+        setError(err.response?.data?.message || 'Failed to schedule campaign.');
+      }
     } finally {
       setSubmitting(false);
     }

@@ -42,7 +42,7 @@ export const scheduleEmails = async (req: Request, res: Response, next: NextFunc
       name,
       subject,
       body,
-      startTime,
+      startTime: new Date(startTime),
       delaySeconds,
       hourlyLimit,
       recipients,
