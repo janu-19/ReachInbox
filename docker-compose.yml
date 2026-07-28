@@ -24,6 +24,39 @@ services:
     volumes:
       - redis_data:/data
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: email-scheduler-backend
+    restart: always
+    depends_on:
+      - mysql
+      - redis
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+      - DATABASE_URL=mysql://scheduler_user:scheduler_password_123@mysql:3306/email_scheduler
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=super_secret_jwt_key_change_me_in_production
+      - ETHEREAL_USER=mock_user@ethereal.email
+      - ETHEREAL_PASS=mock_pass_123
+      - GOOGLE_CLIENT_ID=placeholder-client-id.apps.googleusercontent.com
+      - WORKER_CONCURRENCY=5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: email-scheduler-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
 volumes:
   mysql_data:
   redis_data:
