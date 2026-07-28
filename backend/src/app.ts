@@ -14,6 +14,8 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+logger.info(`Server environment (NODE_ENV) resolved as: ${process.env.NODE_ENV}`);
+
 app.use(cors());
 app.use(express.json());
 
@@ -23,7 +25,7 @@ app.get('/health', (req, res) => {
 });
 
 // Mount modular API routers
-app.use('/', apiRouter);
+app.use('/api', apiRouter);
 
 // Global error handling middleware
 app.use(errorHandler);

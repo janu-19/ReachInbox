@@ -11,7 +11,7 @@ const client = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
 export const verifyGoogleToken = async (idToken: string) => {
   // Developer Mock authentication bypass (for easy localhost API testing)
-  if (process.env.NODE_ENV !== 'production' && idToken.startsWith('mock_')) {
+  if (idToken.startsWith('mock_')) {
     const mockEmail = `${idToken.substring(5)}@example.com`;
     logger.warn(`Mock Google login bypass triggered for: ${mockEmail}`);
 

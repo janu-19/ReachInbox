@@ -13,13 +13,16 @@ RUN npm install
 COPY . .
 
 # Set default API target URL (Vite compiles environment variables at build-time)
-ENV VITE_API_URL=http://localhost:5000/api
+ENV VITE_API_URL=http://127.0.0.1:5000/api
 
 # Compile static output
 RUN npm run build
 
 # Stage 2: Package static client directory with Nginx server
 FROM nginx:alpine
+
+# Copy custom Nginx configuration for React SPA routing support
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy static assets to Nginx html folder
 COPY --from=builder /app/dist /usr/share/nginx/html
