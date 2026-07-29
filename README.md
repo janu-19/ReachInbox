@@ -4,41 +4,96 @@ ReachInbox is a high-performance, production-ready email scheduling and automate
 
 ---
 
-## 🏗️ System Architecture
+## 🔒 Submission & Repository Access
 
-The platform is structured into a modular, decoupled workspace separating client-side and server-side runtimes:
+- **GitHub Repository**: [`https://github.com/janu-19/ReachInbox`](https://github.com/janu-19/ReachInbox)
+- **Collaborator Access Granted**: `Mitrajit` and `sarvagya-chaudhary`
+
+*(To manage access: Go to GitHub Repo -> Settings -> Collaborators -> Add `Mitrajit` and `sarvagya-chaudhary`)*
+
+---
+
+## 📹 Demo Video Checklist (Max 5 Minutes)
+
+Link to Demo Video: **[Insert Demo Video Link Here - Loom / YouTube / Google Drive]**
+
+### Key Scenarios Demonstrated in Video:
+1. **Creating & Scheduling Emails**: Creating campaign from Frontend Compose view (with recipient CSV import & merge variables).
+2. **Dashboard Monitoring**: Inspecting real-time **Scheduled** and **Sent/Failed** email tables & logs.
+3. **Server Restart Persistence Test**:
+   - Schedule emails for future execution.
+   - Kill/stop the backend Node server process.
+   - Restart the backend server.
+   - Observe that BullMQ and Redis restore all scheduled jobs and execute them at the exact intended timestamps without data loss.
+4. **Rate Limiting & Concurrency Behavior**: Demonstrating hourly rate limit enforcement and staggered queue worker concurrency.
+
+---
+
+## 🏗️ Architecture Overview
+
+The platform is structured as a decoupled monorepo workspace separating client-side UI and server-side worker runtimes:
 
 ```mermaid
 flowchart TD
     subgraph Client [React Frontend - Port 80/5173]
         A[Vite Client SPA] --> B[Axios API Handler]
-        B --> C[OAuth Auth Context]
+        B --> C[OAuth / Auth Context]
     end
 
     subgraph Server [Express Backend - Port 5001]
         D[Router REST Endpoints] --> E[Zod Schema Validator]
-        E --> F[Prisma client ORM]
+        E --> F[Prisma ORM Client]
         D --> G[BullMQ Queue Manager]
     end
 
     subgraph Storage [Databases & Cache]
-        F --> H[(MySQL - Port 3307)]
-        G --> I[(Redis Cache - Port 6379)]
+        F --> H[(MySQL Database - Port 3307)]
+        G --> I[(Redis Cache & Queue - Port 6379)]
     end
 
     subgraph Worker [Background Processors]
         J[BullMQ Worker Daemon] --> I
         J --> F
-        J --> K[Nodemailer Dispatcher]
+        J --> K[Nodemailer SMTP Dispatcher]
     end
 ```
 
-### Core Stack Components:
-* **Frontend:** React, TypeScript, TailwindCSS/Vanilla CSS, Vite (client-side compiler), and Lucide icons.
-* **Backend:** Node.js, Express, TypeScript, Zod validations, JWT sessions, and winston logger.
-* **Database & ORM:** MySQL 8 storing structural relationships, handled via Prisma ORM.
-* **Queue & Scheduler:** Redis-backed BullMQ processing background email worker loops.
-* **SMTP Delivery:** Nodemailer managing dynamic Ethereal, Gmail, Outlook, or custom SMTP configurations.
+### Core Architecture Components:
+
+1. **How Scheduling Works**:
+   - When a campaign is submitted via `POST /api/schedule`, the backend parses recipient data, applies template variable substitutions (`{{ firstname }}`), calculates initial send timestamps using `startTime` + `delaySeconds`, and assigns hourly batches based on `hourlyLimit`.
+   - Records are created in MySQL database with status `SCHEDULED`.
+   - Delayed jobs are registered in BullMQ Redis queue with `jobId = scheduledEmail.id` and `delay = scheduledTime - currentTime`.
+
+2. **How Rate Limiting & Concurrency Are Implemented**:
+   - **Concurrency**: BullMQ workers are configured with configurable worker concurrency (default `5` concurrent dispatches), processing jobs asynchronously.
+   - **Rate Limiting**: Redis tracks hourly send counts per sender account using atomic keys `sender:rate:<senderAccountId>:<YYYY-MM-DDTHH>`.
+   - When a worker processes an email, it increments (`INCR`) the Redis key. If the counter exceeds the sender's configured `hourlyLimit`, the worker automatically reschedules the job by adding `+1 hour` to `scheduledTime`, preserving job order without failing execution.
+
+3. **How Persistence on Restart is Handled**:
+   - BullMQ stores delayed jobs in Redis **Sorted Sets (`ZSET`)**, scored by execution Unix timestamp.
+   - All email records and audit trails are persisted in MySQL database.
+   - If the backend server stops or crashes, all pending jobs remain safe in Redis and MySQL. Upon backend startup, the worker reconnects to Redis and resumes dispatching due jobs immediately.
+
+---
+
+## 📌 Features Implemented Matrix
+
+| Component | Feature Implemented | Technical Details |
+| :--- | :--- | :--- |
+| **Backend** | **Campaign Email Scheduler** | Staggered delay spacing, dynamic recipient merge tags (`{{ firstname }}`), subject/body interpolation |
+| **Backend** | **Restart Persistence** | Redis Sorted Sets (`ZSET`) + MySQL database state recovery on server restart |
+| **Backend** | **Hourly Rate Limiting** | Redis atomic counter (`INCR`) with automatic 1-hour delay shift when limit is exceeded |
+| **Backend** | **Queue Concurrency** | BullMQ multi-worker processing with configurable concurrency limits |
+| **Backend** | **Idempotency Safeguards** | Unique composite SQL key `(campaignId, recipientEmail)` + BullMQ `jobId` lock |
+| **Backend** | **Ethereal SMTP Integration** | Dynamic Ethereal test account generation + Custom/Gmail/Outlook SMTP support |
+| **Backend** | **Authentication & Security** | Google OAuth token verification, JWT sessions, Zod request body validation |
+| **Backend** | **Integration Testing Suite** | Automated backend integration test runner testing endpoints, queues & rate limits |
+| **Frontend** | **Authentication & Dev Mode** | Google OAuth login + One-click unauthenticated Developer Mode for evaluation |
+| **Frontend** | **Analytics Dashboard** | Real-time campaign stats (Total Scheduled, Total Sent, Failed, Active Senders) |
+| **Frontend** | **Compose Campaign UI** | Rich editor, recipient CSV upload parser, merge variable helper, live preview modal |
+| **Frontend** | **Senders Configuration** | Connect/test custom SMTP credentials & dynamic Ethereal test account creation |
+| **Frontend** | **Emails & Audit Logs** | Paginated tables for **Scheduled** & **Sent** emails, search by recipient, detail inspect modal |
 
 ---
 
@@ -49,40 +104,43 @@ ReachInbox/
 ├── docker-compose.yml           # Multi-container orchestration configurations
 ├── README.md                    # Project documentation
 ├── backend/
-│   ├── Dockerfile               # Backend TS build and database push containerization
+│   ├── Dockerfile               # Backend TS build and containerization
 │   ├── prisma/
-│   │   └── schema.prisma        # Prisma relational database definitions and index ledgers
+│   │   └── schema.prisma        # Database schema definitions & indexes
 │   ├── src/
 │   │   ├── app.ts               # Express bootstrapper & worker mounts
-│   │   ├── config/              # Prisma & Redis client instantiations
-│   │   ├── middleware/          # JWT auth, Zod validation, and Express error handlers
-│   │   ├── services/            # Google OAuth, Nodemailer, and Campaign Scheduler services
+│   │   ├── config/              # Database & Redis connection setups
+│   │   ├── middleware/          # JWT auth, Zod validations, error handlers
+│   │   ├── services/            # Google OAuth, Nodemailer, Campaign services
 │   │   ├── workers/             # BullMQ background worker loops
-│   │   ├── queue/               # Redis queue definitions & logger event listeners
-│   │   ├── controllers/         # REST API request handlers
-│   │   ├── routes/              # Express route mappings
-│   │   └── tests/               # Backend integration testing suite
+│   │   ├── queue/               # Redis queue setup & event listeners
+│   │   ├── controllers/         # REST API request controllers
+│   │   ├── routes/              # Express API endpoints
+│   │   └── tests/               # Backend integration test suite
 │   ├── tsconfig.json
 │   └── package.json
 └── frontend/
-    ├── Dockerfile               # Vite build asset pipeline and Nginx server bundle
+    ├── Dockerfile               # Vite production bundle and Nginx setup
     ├── src/
-    │   ├── main.tsx             # Route setups and global contexts wrap
-    │   ├── services/            # Axios API proxy configs
-    │   ├── context/             # Auth state provider and mock logins handler
-    │   ├── components/          # Layout sidebar, inspect modals, and reusable table components
-    │   ├── pages/               # Senders SMTP link, Compose campaign, and Emails dashboard logs
-    │   └── index.css            # Stylesheets
+    │   ├── main.tsx             # Application entrypoint & routes
+    │   ├── services/            # Axios API proxy service
+    │   ├── context/             # Auth context & session provider
+    │   ├── components/          # Reusable tables, modals, layout sidebar
+    │   └── pages/               # Dashboard, Compose, Senders, Scheduled, Sent views
     ├── tsconfig.json
     └── package.json
 ```
 
 ---
 
-## 🛠️ Environment Variables
+## 🛠️ Environment Variables & Ethereal Email Setup
+
+### Setting up Ethereal Email for Testing:
+1. **Option A (Automatic - Recommended)**: Click **"Create Ethereal Account"** on the Senders page in the frontend dashboard. The app will generate credentials automatically.
+2. **Option B (Manual)**: Visit [ethereal.email](https://ethereal.email), click **"Create Ethereal Account"**, and copy the Username and Password into your `backend/.env`.
 
 ### Backend Configuration (`backend/.env`)
-Create a file at `backend/.env` containing:
+Create a file at `backend/.env`:
 ```env
 PORT=5001
 NODE_ENV=production
@@ -90,16 +148,19 @@ DATABASE_URL="mysql://scheduler_user:scheduler_password_123@localhost:3307/email
 REDIS_URL="redis://127.0.0.1:6379"
 JWT_SECRET="your_secure_jwt_secret_key_change_me"
 
-# Test SMTP Credentials
+# Optional: Static Test SMTP Credentials (Ethereal)
 ETHEREAL_USER="your_ethereal_user"
 ETHEREAL_PASS="your_ethereal_password"
 
 # Google Authentication
 GOOGLE_CLIENT_ID="your_google_client_id.apps.googleusercontent.com"
+
+# Bypass SMTP live network verification if local ports are blocked by firewall
+BYPASS_SMTP_VERIFICATION=false
 ```
 
 ### Frontend Configuration (`frontend/.env`)
-Create a file at `frontend/.env` containing:
+Create a file at `frontend/.env`:
 ```env
 VITE_API_URL="http://localhost:5001/api"
 VITE_GOOGLE_CLIENT_ID="your_google_client_id.apps.googleusercontent.com"
@@ -109,43 +170,41 @@ VITE_GOOGLE_CLIENT_ID="your_google_client_id.apps.googleusercontent.com"
 
 ## 🚀 Quick Setup & Run
 
-### Method 1: Start the Entire Project with One Command (Recommended)
-Make sure Docker is active and run the following command at the root of the workspace directory:
+### Method 1: Docker (One Command Launch - Recommended)
+Make sure Docker Desktop is running and execute:
 ```bash
 docker compose up --build
 ```
-This builds and boots the entire stack:
-* **Frontend Workspace:** Access it at `http://localhost:80`
-* **Backend API Gateway:** Access endpoints at `http://localhost:5001`
-* **MySQL Database:** Local port mapping exposed on `127.0.0.1:3307`
-* **Redis Instance:** Access caching at `127.0.0.1:6379`
+- **Frontend SPA**: `http://localhost:80` (or `http://localhost:5173`)
+- **Backend API**: `http://localhost:5001`
+- **MySQL Database**: `localhost:3307`
+- **Redis Cache**: `localhost:6379`
 
-### Method 2: Local Developer Startup (Step-by-Step)
-If you prefer running services directly on your host machine:
-
-1. **Start Docker Containers (Databases Only):**
+### Method 2: Local Developer Setup
+1. **Start Database Services**:
    ```bash
    docker compose up mysql redis -d
    ```
-2. **Setup and Boot Backend Service:**
+2. **Run Backend**:
    ```bash
    cd backend
    npm install
    npx prisma db push
    npm run dev
    ```
-3. **Setup and Boot Frontend Client:**
+3. **Run Frontend**:
    ```bash
    cd ../frontend
    npm install
    npm run dev
    ```
-   Open `http://localhost:5173` in your browser.
+   Access client at `http://localhost:5173`.
 
 ---
 
-## 🧪 Running the Test Suite
-The backend contains a dedicated integration test suite verifying APIs, validations, delayed queues, idempotency, and hourly rate checks. Run it with:
+## 🧪 Integration Test Suite
+
+Run the full integration test suite covering API validation, queue scheduling, rate limits, and idempotency:
 ```bash
 cd backend
 npm run test
@@ -153,102 +212,9 @@ npm run test
 
 ---
 
-## 📖 API Documentation
+## ⚠️ Assumptions, Shortcuts & Trade-Offs
 
-All routes require a JWT bearer token injected as `Authorization: Bearer <token>` (except authentication paths).
-
-### 1. Authentication
-* **`POST /api/auth/google`**
-  * Exchange a Google credential token (idToken) for a backend session JWT.
-  * *Request Body:* `{ "token": "google_id_token" }`
-  * *Response:* `{ "token": "jwt_token", "user": { "id": "...", "email": "..." } }`
-
-### 2. Connected SMTP Senders
-* **`POST /api/senders`**
-  * Link a new SMTP outbound sender account.
-  * *Request Body:*
-    ```json
-    {
-      "name": "Outbox Agent",
-      "email": "agent@company.com",
-      "provider": "CUSTOM_SMTP",
-      "smtpHost": "smtp.company.com",
-      "smtpPort": 587,
-      "smtpUser": "agent@company.com",
-      "smtpPass": "password123"
-    }
-    ```
-* **`GET /api/senders`**
-  * List all linked sender SMTP accounts.
-
-### 3. Campaign Scheduling
-* **`POST /api/schedule`**
-  * Schedule a campaign with automated delay spacing, merge variables, and rate limiters.
-  * *Request Body:*
-    ```json
-    {
-      "name": "Summer Sales Campaign",
-      "subject": "Hi {{ firstname }}, check our deals!",
-      "body": "Hi {{ firstname }}, check out Acme Inc deals.",
-      "senderAccountId": "sender-uuid-value",
-      "startTime": "2026-07-28T12:00:00.000Z",
-      "delaySeconds": 5,
-      "hourlyLimit": 100,
-      "recipients": [
-        { "email": "alice@client.com", "variables": { "firstname": "Alice" } },
-        { "email": "bob@client.com", "variables": { "firstname": "Bob" } }
-      ]
-    }
-    ```
-  * *Response (201 Created):* `{ "campaignId": "...", "totalScheduled": 2 }`
-
-### 4. Emails Audit Logs
-* **`GET /api/emails`**
-  * Fetch and paginate audit logs. Supports query parameters `search` (recipient email) and `status` (`SCHEDULED`, `SENDING`, `SENT`, `FAILED`).
-* **`GET /api/scheduled`**
-  * Returns paginated list of scheduled/pending emails.
-* **`GET /api/sent`**
-  * Returns paginated list of sent/failed emails.
-* **`GET /api/emails/:id`**
-  * Fetch a detailed log record including dynamic variable payloads and SMTP error traces.
-
----
-
-## ⚡ Core Platform Algorithms
-
-### 1. Scheduler and Queue Workflow
-1. When `POST /schedule` is called, the system creates a parent `Campaign` record.
-2. It breaks the recipient list down:
-   - Evaluates `hourlyLimit` to determine which hour block each recipient falls into.
-   - Accumulates `delaySeconds` to stagger dispatches.
-3. The scheduled items are batch-inserted into MySQL under the `ScheduledEmail` table with status `SCHEDULED`.
-4. The system calculates `delay = email.scheduledTime - Date.now()` and registers a delayed job in BullMQ with `jobId: email.id`.
-
-### 2. Configurable Hourly Rate Limiting
-To enforce sending limits per sender without dropping jobs or failing executions:
-* **Key Design:** Redis keeps atomic counters for each hour slot under `sender:rate:<senderAccountId>:<YYYY-MM-DDTHH>`.
-* **Atomic Validation:** When a worker processes an email, it increments (`INCR`) the Redis key. If the count exceeds the campaign's `hourlyLimit`, it triggers the **Reschedule Flow**.
-* **Order Preservation:** 
-  1. We update the MySQL record's `scheduledTime` by adding exactly `1 hour`. This shifts the entire exceeding batch forwards by one hour, preserving their relative delay spacing and execution sequence.
-  2. The database status reverts to `SCHEDULED`.
-  3. The active BullMQ job is moved back to the delayed set using `job.moveToDelayed(timestamp, token)`. This halts current execution without triggering job failures or consuming retry attempts.
-
-### 3. Idempotency Safeguards
-We block duplicate dispatches at three layers:
-* **Unique SQL Key:** `ScheduledEmail` has a unique composite index constraint on `(campaignId, recipientEmail)` mapped to `idempotencyKey`. Bulk insert commands skip duplicates automatically.
-* **Unique Queue Job ID:** BullMQ jobs are registered in Redis using `jobId: email.id`. Redis automatically drops duplicate submissions with the same jobId.
-* **Worker State Guard:** The worker checks: `if (email.status === EmailStatus.SENT) return;`. This acts as an execution gate if a job is retried or double-submitted.
-
-### 4. Restart Persistence
-BullMQ delayed jobs are saved in Redis Sorted Sets (`ZSET`). The score of the set represents the target Unix execution timestamp. Because Redis runs inside an isolated container:
-* Restarting or crashing the Node backend server does not affect cached Redis data.
-* Upon startup, the worker polls the Redis queue and resumes processing delayed jobs immediately.
-
----
-
-## 🔮 Future Improvements
-
-* **Analytics Dashboard:** Charting email opens, click-through rates (CTR), and bounce/spam category distributions.
-* **Visual Template Builder:** A drag-and-drop HTML builder to design rich campaign newsletters.
-* **Automatic IP Rotation:** Rotate outbound dispatches across multiple linked server IPs to avoid blacklisting.
-* **External API Hooks:** Connect platforms like HubSpot, Salesforce, or Google Sheets directly to import recipient lists.
+1. **Sandboxed SMTP Dispatching**: Ethereal Email is used as the primary testing gateway to allow real message inspection without sending accidental spam to external domains.
+2. **Rate Limit Rescheduling vs Failing**: When a sender hits their hourly limit, jobs are rescheduled by `+1 hour` instead of failing or being dropped. This guarantees zero message loss while respecting sender thresholds.
+3. **Queue State Persistence**: Redis Sorted Sets are used for job delay queues. In production setups, Redis AOF/RDB snapshot persistence should be enabled to guarantee zero queue state loss on host hardware restarts.
+4. **Developer Mode Authentication**: Implemented a one-click Developer Auth bypass alongside Google OAuth to allow evaluators to inspect all dashboard features without needing Google OAuth setup.
