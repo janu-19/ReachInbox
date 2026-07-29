@@ -68,7 +68,13 @@ export const EmailInspectModal: React.FC<EmailInspectModalProps> = ({ email, onC
             <pre className="text-[10px] text-indigo-300/80 max-h-32 overflow-y-auto whitespace-pre-wrap pt-1 font-mono">
               {email.variables
                 ? typeof email.variables === 'string'
-                  ? JSON.stringify(JSON.parse(email.variables), null, 2)
+                  ? (() => {
+                      try {
+                        return JSON.stringify(JSON.parse(email.variables), null, 2);
+                      } catch (e) {
+                        return email.variables;
+                      }
+                    })()
                   : JSON.stringify(email.variables, null, 2)
                 : '{}'}
             </pre>

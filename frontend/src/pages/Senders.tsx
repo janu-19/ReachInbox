@@ -103,10 +103,14 @@ export const Senders: React.FC = () => {
       }, 1500);
 
     } catch (error: any) {
-      setFormError(
-        error.response?.data?.message ||
-        'Failed to connect to SMTP server. Verify your connection settings and try again.'
-      );
+      console.error('Add sender failed details:', error.response?.data);
+      const backendError = error.response?.data;
+      let errMsg = backendError?.message || 'Failed to connect to SMTP server. Verify your connection settings and try again.';
+      if (backendError?.details && Array.isArray(backendError.details)) {
+        const detailsStr = backendError.details.map((d: any) => `${d.field}: ${d.message}`).join(', ');
+        errMsg = `${errMsg} (${detailsStr})`;
+      }
+      setFormError(errMsg);
     } finally {
       setSubmitting(false);
     }
