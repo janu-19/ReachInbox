@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../config/db.js';
 import { testConnection } from '../services/nodemailer.service.js';
 import { ProviderType } from '@prisma/client';
+import { logger } from '../utils/logger.js';
 
 export const createSenderSchema = z.object({
   body: z.object({
@@ -10,16 +11,17 @@ export const createSenderSchema = z.object({
     email: z.string().email('Invalid email address'),
     provider: z.nativeEnum(ProviderType),
     smtpHost: z.string().min(1, 'SMTP Host is required'),
-    smtpPort: z.number().int().positive('SMTP Port must be a positive integer'),
+    smtpPort: z.coerce.number().int().positive('SMTP Port must be a positive integer'),
     smtpUser: z.string().min(1, 'SMTP User is required'),
     smtpPass: z.string().min(1, 'SMTP Password is required'),
+    skipVerify: z.boolean().optional(),
   }),
 });
 
 export const addSender = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
-    const { name, email, provider, smtpHost, smtpPort, smtpUser, smtpPass } = req.body;
+    const { name, email, provider, smtpHost, smtpPort, smtpUser, smtpPass, skipVerify } = req.body;
 
     // Temporary object used to run live verification checks
     const tempAccount = {
@@ -36,15 +38,38 @@ export const addSender = async (req: Request, res: Response, next: NextFunction)
       updatedAt: new Date(),
     };
 
-    // Run connection test before database insertion (can be bypassed via env variable if ports are blocked by host)
-    const bypassVerification = process.env.BYPASS_SMTP_VERIFICATION === 'true';
-    const isConnected = bypassVerification ? true : await testConnection(tempAccount);
-    
-    if (!isConnected) {
-      return res.status(400).json({
-        error: 'SMTPConnectionError',
-        message: 'SMTP credentials test failed. Please verify configurations, hostname, port, and credentials.',
-      });
+    // Run connection test before database insertion
+    const testResult = await testConnection(tempAccount);
+    if (!testResult.success) {
+      const errCode = (testResult.error as any)?.code;
+      const errMessage = (testResult.error as any)?.message || (typeof testResult.error === 'string' ? testResult.error : '') || String(testResult.error || '');
+
+      const isNetworkError = [
+        'ETIMEDOUT',
+        'ECONNREFUSED',
+        'EHOSTUNREACH',
+        'ENETUNREACH',
+        'EADDRNOTAVAIL',
+        'ESOCKETTIMEDOUT',
+        'ERR_SOCKET_CONNECTION_TIMEOUT',
+        'ENOTFOUND',
+        'EAI_AGAIN'
+      ].includes(errCode) || 
+      errMessage.toLowerCase().includes('timeout') ||
+      errMessage.toLowerCase().includes('connection') ||
+      errMessage.toLowerCase().includes('dns') ||
+      errMessage.toLowerCase().includes('getaddrinfo') ||
+      errMessage.toLowerCase().includes('unreachable');
+
+      if (!isNetworkError && skipVerify !== true) {
+        return res.status(400).json({
+          error: 'SMTPConnectionError',
+          message: 'SMTP credentials test failed. Please verify configurations, hostname, port, and credentials.',
+          details: errMessage || testResult.error,
+        });
+      }
+
+      logger.warn(`SMTP connection test failed for ${email} with error code ${errCode} / message "${errMessage}", but proceeding due to ${isNetworkError ? 'network/hosting restriction' : 'skipVerify flag'}.`);
     }
 
     const senderAccount = await prisma.senderAccount.create({
