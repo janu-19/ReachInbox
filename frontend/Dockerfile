@@ -13,7 +13,7 @@ RUN npm install
 COPY . .
 
 # Set default API target URL (Vite compiles environment variables at build-time)
-ENV VITE_API_URL=http://127.0.0.1:5000/api
+ENV VITE_API_URL=https://reachinboxbackend-production-102a.up.railway.app/api
 
 # Compile static output
 RUN npm run build

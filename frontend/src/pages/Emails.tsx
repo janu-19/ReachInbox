@@ -92,7 +92,7 @@ export const Emails: React.FC = () => {
         <form onSubmit={handleSearchSubmit} className="flex-1 max-w-md relative">
           <input
             type="text"
-            placeholder="Search recipient email..."
+            placeholder="Search recipient, campaign or subject..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="block w-full pl-10 pr-24 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-sm placeholder-slate-500 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
@@ -286,7 +286,13 @@ export const Emails: React.FC = () => {
                 <pre className="text-[10px] text-indigo-300/80 max-h-32 overflow-y-auto whitespace-pre-wrap pt-1 font-mono">
                   {selectedEmail.variables
                     ? typeof selectedEmail.variables === 'string'
-                      ? JSON.stringify(JSON.parse(selectedEmail.variables), null, 2)
+                      ? (() => {
+                          try {
+                            return JSON.stringify(JSON.parse(selectedEmail.variables), null, 2);
+                          } catch (e) {
+                            return selectedEmail.variables;
+                          }
+                        })()
                       : JSON.stringify(selectedEmail.variables, null, 2)
                     : '{}'}
                 </pre>

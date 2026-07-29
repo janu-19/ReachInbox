@@ -15,7 +15,7 @@ flowchart TD
         B --> C[OAuth Auth Context]
     end
 
-    subgraph Server [Express Backend - Port 5000]
+    subgraph Server [Express Backend - Port 5001]
         D[Router REST Endpoints] --> E[Zod Schema Validator]
         E --> F[Prisma client ORM]
         D --> G[BullMQ Queue Manager]
@@ -84,7 +84,7 @@ ReachInbox/
 ### Backend Configuration (`backend/.env`)
 Create a file at `backend/.env` containing:
 ```env
-PORT=5000
+PORT=5001
 NODE_ENV=production
 DATABASE_URL="mysql://scheduler_user:scheduler_password_123@localhost:3307/email_scheduler"
 REDIS_URL="redis://127.0.0.1:6379"
@@ -101,7 +101,7 @@ GOOGLE_CLIENT_ID="your_google_client_id.apps.googleusercontent.com"
 ### Frontend Configuration (`frontend/.env`)
 Create a file at `frontend/.env` containing:
 ```env
-VITE_API_URL="http://localhost:5000/api"
+VITE_API_URL="http://localhost:5001/api"
 VITE_GOOGLE_CLIENT_ID="your_google_client_id.apps.googleusercontent.com"
 ```
 
@@ -116,7 +116,7 @@ docker compose up --build
 ```
 This builds and boots the entire stack:
 * **Frontend Workspace:** Access it at `http://localhost:80`
-* **Backend API Gateway:** Access endpoints at `http://localhost:5000`
+* **Backend API Gateway:** Access endpoints at `http://localhost:5001`
 * **MySQL Database:** Local port mapping exposed on `127.0.0.1:3307`
 * **Redis Instance:** Access caching at `127.0.0.1:6379`
 
